@@ -30,7 +30,7 @@ function toHHMM(ts){
 function setBadge(status){
   const b = $('#statusBadge');
   const s = String(status||'—').toLowerCase();
-  b.className = 'badge fs-6'; // reset
+  b.className = 'badge fs-6';
   if (s==='masuk') b.classList.add('text-bg-success');
   else if (s==='selesai') b.classList.add('text-bg-secondary');
   else if (s==='alpha') b.classList.add('text-bg-danger');
@@ -91,7 +91,7 @@ async function apiPost(action, body){
 }
 
 // ======= State & Elements =======
-let EMPLOYEES = []; // filtered by selected division
+let EMPLOYEES = [];
 let SELECTED_ID = '';
 
 const selDiv   = $('#division');
@@ -121,7 +121,6 @@ function setButtons({check=false, inBtn=false, outBtn=false}={}){
 function onSelectEmployee(){
   SELECTED_ID = selEmp.value || '';
   resetStatusCard();
-  // hanya tombol "Cek Status" yang aktif setelah pilih karyawan
   setButtons({check: !!SELECTED_ID, inBtn:false, outBtn:false});
 }
 function fillEmployees(list){
@@ -131,21 +130,17 @@ function fillEmployees(list){
   onSelectEmployee();
 }
 function applyStateFrom(att){
-  // att: { status_view, check_in, check_out, is_holiday }
   const status = att.status_view || '—';
   setBadge(status);
   stIn.value  = toHHMM(att.check_in);
   stOut.value = toHHMM(att.check_out);
 
-  // Tombol aktif sesuai status
-  // libur/izin → off semua; selesai → off; masuk → hanya Keluar; alpha/belum → hanya Hadir
   const s = String(status).toLowerCase();
   if (s==='libur' || s==='izin' || s==='selesai'){
     setButtons({check:true, inBtn:false, outBtn:false});
   } else if (s==='masuk'){
     setButtons({check:true, inBtn:false, outBtn:true});
   } else {
-    // alpha / belum / unknown
     setButtons({check:true, inBtn:true, outBtn:false});
   }
 }
@@ -179,7 +174,14 @@ btnIn.addEventListener('click', async ()=>{
   if (!SELECTED_ID) return showAlert('Pilih karyawan dulu','warning');
   const j = await apiPost('checkin', { employee_id: SELECTED_ID });
   if (!j.ok){ showAlert(j.error || 'Gagal check-in','danger'); return; }
-  applyStateFrom(j.data || {});
+
+  // OPTIMISTIC: langsung anggap "masuk" & aktifkan tombol Keluar, tanpa wajib cek status ulang
+  const data = j.data || {};
+  applyStateFrom({
+    status_view: 'masuk',
+    check_in: data.check_in || data.checkIn || data.checkin || '',
+    check_out: data.check_out || ''
+  });
   showAlert('Check-in tercatat','success');
 });
 
@@ -187,21 +189,26 @@ btnOut.addEventListener('click', async ()=>{
   if (!SELECTED_ID) return showAlert('Pilih karyawan dulu','warning');
   const j = await apiPost('checkout', { employee_id: SELECTED_ID });
   if (!j.ok){ showAlert(j.error || 'Gagal check-out','danger'); return; }
-  applyStateFrom(j.data || {});
+
+  // OPTIMISTIC: langsung set "selesai" & matikan tombol aksi
+  const data = j.data || {};
+  applyStateFrom({
+    status_view: 'selesai',
+    check_in: data.check_in || '',
+    check_out: data.check_out || data.checkout || ''
+  });
   showAlert('Check-out tercatat','success');
 });
 
 // ======= Init =======
 (async function init(){
   try{
-    // load divisions
     const divRes = await apiGet({ action:'divisions' });
     if (divRes.ok){
       const divisions = divRes.data || [];
       selDiv.innerHTML = `<option value="" selected disabled>Pilih divisi…</option>` +
         divisions.map(d=>`<option value="${d}">${d}</option>`).join('');
     }
-    // tombol default mati
     setButtons({check:false, inBtn:false, outBtn:false});
   }catch(_){
     showAlert('Gagal memuat data awal','danger', 4000);
